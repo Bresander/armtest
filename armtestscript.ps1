@@ -1,2 +1,2 @@
-﻿install-windowsfeature -name "AD-Domain-services,DNS,DHCP" -IncludeManagementTools
-Restart-Computer
+Install-WindowsFeature -Name AD-Domain-Services, DNS -IncludeManagementTools -Restart
+
