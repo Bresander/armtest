@@ -1,9 +1,3 @@
-param (
-    [Parameter(Mandatory=$true)][string]$domainName,
-    [Parameter(Mandatory=$true)][string]$adminUsername,
-    [Parameter(Mandatory=$true)][string]$AdminPassword
-)
-
 # Install Active Directory Domain Services
 Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
 
@@ -11,9 +5,9 @@ Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
 
 
 $Params = @{
-    DomainName = $domainName
-    DomainNetbiosName = $domainName.Split('.')[0]
-    SafeModeAdministratorPassword = (ConvertTo-SecureString -AsPlainText $AdminPassword -Force)
+    DomainName = Mstile.se
+    DomainNetbiosName = $Mstile.se.Split('.')[0]
+    SafeModeAdministratorPassword = (ConvertTo-SecureString -AsPlainText Taklaggare90 -Force)
     CreateDnsDelegation = $false
     DatabasePath = 'C:\Windows\NTDS'
     DomainMode = 'WinThreshold'
