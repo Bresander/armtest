@@ -7,7 +7,7 @@ Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
 $Params = @{
     DomainName = Mstile.se
     DomainNetbiosName = $Mstile.se.Split('.')[0]
-    SafeModeAdministratorPassword = (ConvertTo-SecureString -AsPlainText Taklaggare90 -Force)
+    SafeModeAdministratorPassword = (ConvertTo-SecureString -AsPlainText "Taklaggare90" -Force)
     CreateDnsDelegation = $false
     DatabasePath = 'C:\Windows\NTDS'
     DomainMode = 'WinThreshold'
