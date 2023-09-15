@@ -1,3 +1,10 @@
+param (
+    [Parameter(Mandatory=$true)][string]$domainName,
+    [Parameter(Mandatory=$true)][string]$adminUsername,
+    [Parameter(Mandatory=$true)][string]$AdminPassword
+)
+
+
 # Install Active Directory Domain Services
 Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
 
