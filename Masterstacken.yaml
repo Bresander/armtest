@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09' #Detta är en versionsdeklaration för CloudFormation-templaten.
+
+Description: Create an Webapp with ALB-ASG #En beskrivning av templatens syfte, som är att skapa en webbapplikation med en Application Load Balancer (ALB) och en Auto Scaling Group (ASG).
+
+Resources: #Här börjar definitionen av resurserna som ska skapas.
+  
+  ALBSecurityGroup: #En säkerhetsgrupp för Application Load Balancer (ALB) definieras. Denna grupp tillåter inkommande trafik på port 80 från alla IP-adresser.
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Http traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  
+  SecurityGroupHttp: #Den tillåter inkommande trafik endast från säkerhetsgruppen för ALB. Detta är en säkerhetsåtgärd för att begränsa åtkomsten till EC2-instanserna.
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow only http traffic from ALB
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !GetAtt ALBSecurityGroup.GroupId
+          #Open HTTP for all IPs (Be cautious in production)
+
+  SecurityGroupSSH: # SSH-åtkomst till EC2-instanserna. Den tillåter inkommande SSH-trafik från alla IP-adresser.
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  
+  #En "Launch Template" definieras. Detta är en mall för att skapa EC2-instanser med specifika inställningar. Här anges inställningar som instanstyp, AMI (Amazon Machine Image),
+  #nyckelnamn, nätverksinställningar och användardata. Användardatan innehåller ett skript som körs vid instansskapande och installerar Nginx-webbservern 
+  NginxLaunchTemplate: 
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: NginxLaunchTemplate
+      VersionDescription: Version 1
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: ami-0b9fd8b55a6e3c9d5
+        KeyName: Mykey
+      
+        
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            SubnetId: subnet-0f6c96ba7963fd365
+            Groups:
+              - !GetAtt SecurityGroupHttp.GroupId
+              - !GetAtt SecurityGroupSSH.GroupId
+            
+        IamInstanceProfile:
+          Name: CodeDeployDemo-EC2-Instance-Profile
+        
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/bin/bash
+              dnf update -y
+              dnf install nginx -y
+              systemctl start nginx
+              systemctl enable nginx
+              sudo sed -i -e "s/nginx/Linus/g" /usr/share/nginx/html/index.html
+  
+  #Här definieras en Application Load Balancer (ALB) som heter "MyALB". Den associeras med säkerhetsgruppen för ALB och de subnät där den ska placeras. Den är konfigurerad för att vara "internet-facing", vilket innebär att den är tillgänglig från internet.
+  MyLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: MyALB
+      SecurityGroups:
+        - !GetAtt ALBSecurityGroup.GroupId
+      Subnets:
+        - subnet-0f6c96ba7963fd365  # Ersätt med ditt subnäts ID, Definera minst 2st för redundace
+        - subnet-0d5287e88798dcf2c
+      Scheme: internet-facing  # Ersätt med 'intern' för en intern trafik ALB
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 30  # Justera timeoutvärdet för tomgång efter behov
+  
+  MyTargetGroup: #En "Target Group" skapas för att rikta trafik till EC2-instanserna. Här anges inställningar för hur hälsokontroller och riktlinjer för trafik ska utföras.
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: MyTargetGroup
+      Protocol: HTTP  # det önskade protokollet (HTTP, HTTPS, TCP, etc.)
+      Port: 80  # önskat portnummer
+      VpcId: vpc-0a4fc68d6c8d8b417  # ditt VPC-ID
+      HealthCheckProtocol: HTTP  
+      HealthCheckPort: 80  
+      HealthCheckPath: /  
+      HealthCheckIntervalSeconds: 30  
+      HealthCheckTimeoutSeconds: 5  
+      HealthyThresholdCount: 3  
+      UnhealthyThresholdCount: 3  
+      Matcher:
+        HttpCode: 200
+  
+  MyListener: #En lyssnare definieras för ALB. Den är konfigurerad för att vidarebefordra inkommande trafik till målgruppen som tidigare definierades.
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MyTargetGroup  # Reference the target group
+      LoadBalancerArn: !Ref MyLoadBalancer
+      Port: 80  # Specify the listener port (e.g., 80, 443)
+      Protocol: HTTP      
+  
+  MyAutoScalingGroup: #Slutligen skapas en Auto Scaling Group (ASG) som använder "Launch Template" för att starta EC2-instanser. ASG är konfigurerad med minsta och största antal instanser, samt önskat antal instanser. Den är också kopplad till den tidigare skapade Target Group.
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: MyAutoScalingGroup
+      LaunchTemplate:
+        LaunchTemplateName: Nginx2LaunchTemplate
+        Version: 1  # den specifika versionen av din launch template
+      MinSize: 2  # önskad minsta antal instancer som skall finnas tillgängliga
+      MaxSize: 4  # Högsta antal instancer som skall finnas tillgängliga
+      DesiredCapacity: 2  # Det som alltid ska finnas tillgängliga
+      AvailabilityZones: #specificera i vilka AWS-tilgänglighetszoner dina EC2-instanser ska distribueras,Dessa AZs är utformade för att vara fysiskt separerade från varandra för att ge redundans och pålitlighet
+         - eu-west-1a
+         - eu-west-1b
+         - eu-west-1c
+      VPCZoneIdentifier: #en lista över subnet-IDs som motsvarar de subnets i din VPC där du vill att dina ASG-instanser ska startas. Om du har flera tillgänglighetszoner (AZs) i din VPC kan du specificera olika subnets i olika AZs för att distribuera dina instanser över flera AZs, vilket ökar tillgängligheten och toleransen för fel.
+        - subnet-0f6c96ba7963fd365
+        - subnet-0d5287e88798dcf2c
+        - subnet-02bb785dd6fd27f45
+       
+      TargetGroupARNs: 
+        - !Ref MyTargetGroup  #refererar till vilken targetgroup som skall vara kopplad till autoscaling gruppen.
+      Tags:
+        - Key: Name
+          Value: Webserver
+          PropagateAtLaunch: true
